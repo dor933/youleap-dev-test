@@ -292,9 +292,9 @@ would be scope creep.
 structural (untyped props, an unwired handler, a wrong price rule, and a raw `<img>`).
 
 **`clean-code.md` is the coding-standard source of truth; `AGENTS.md` and `CLAUDE.md` only point at it.**
-A later developer will likely open this folder in Codex or Claude Code. Those tools auto-load
-`AGENTS.md` / `CLAUDE.md`. Duplicating the rules in each file would drift. The thin pointers keep the
-standard in one place (`clean-code.md`) while still being picked up at session start. Architecture
+Most developers opening this repo will do it from Codex or Claude Code. Those tools auto-load
+`AGENTS.md` / `CLAUDE.md` at session start, so a thin pointer there makes later work easier and more
+consistent without copying the rules into every agent file (where they would drift). Architecture
 and product decisions stay in `DECISIONS.md`, not in the agent files.
 
 ---
