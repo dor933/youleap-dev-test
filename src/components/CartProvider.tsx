@@ -27,6 +27,7 @@ type CartContextValue = {
   lines: CartLine[]
   count: number
   total: { amount: number; currencyCode: string } | undefined
+  isHydrated: boolean
   isOpen: boolean
   openCart: () => void
   closeCart: () => void
@@ -95,6 +96,7 @@ export default function CartProvider({ children }: { children: ReactNode }) {
       lines: state.lines,
       count: getCartCount(state),
       total: getCartTotal(state),
+      isHydrated: isRestored,
       isOpen,
       openCart: () => setIsOpen(true),
       closeCart: () => setIsOpen(false),
@@ -104,7 +106,7 @@ export default function CartProvider({ children }: { children: ReactNode }) {
         dispatch({ type: "setQuantity", variantId, quantity }),
       clear: () => dispatch({ type: "clear" }),
     }),
-    [state, isOpen, addItem]
+    [state, isOpen, isRestored, addItem]
   )
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>

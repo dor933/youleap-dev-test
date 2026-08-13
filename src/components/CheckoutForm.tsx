@@ -79,7 +79,7 @@ function TextField({
 }
 
 export default function CheckoutForm() {
-  const { lines, total, clear } = useCart()
+  const { lines, total, clear, isHydrated } = useCart()
   const [errors, setErrors] = useState<ShippingErrors>({})
   const [hasSubmitted, setHasSubmitted] = useState(false)
   const [order, setOrder] = useState<PlacedOrder | null>(null)
@@ -192,6 +192,10 @@ export default function CheckoutForm() {
     )
   }
 
+  if (!isHydrated || !isRestored) {
+    return <div className="h-64 animate-pulse rounded-lg bg-gray-100" aria-hidden="true" />
+  }
+
   if (lines.length === 0) {
     return (
       <div className="rounded-lg border border-gray-200 p-10 text-center">
@@ -204,10 +208,6 @@ export default function CheckoutForm() {
         </Link>
       </div>
     )
-  }
-
-  if (!isRestored) {
-    return <div className="h-64 animate-pulse rounded-lg bg-gray-100" aria-hidden="true" />
   }
 
   const errorCount = Object.keys(errors).length
