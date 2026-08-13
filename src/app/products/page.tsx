@@ -1,9 +1,11 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 import { Suspense } from "react"
 import Pagination from "@/components/Pagination"
 import ProductFilters from "@/components/ProductFilters"
 import ProductGrid from "@/components/ProductGrid"
-import { PAGE_SIZE, fetchFacets, fetchProducts } from "@/lib/products"
+import { PAGE_SIZE, parsePage, productsPageHref } from "@/lib/pagination"
+import { fetchFacets, fetchProducts } from "@/lib/products"
 
 type ProductsSearchParams = {
   q?: string
@@ -22,8 +24,7 @@ export default async function ProductsPage({
   searchParams: Promise<ProductsSearchParams>
 }) {
   const params = await searchParams
-  const requestedPage = Number.parseInt(params.page ?? "1", 10)
-  const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1
+  const page = parsePage(params.page)
 
   const [{ products, count }, facets] = await Promise.all([
     fetchProducts({
@@ -36,8 +37,10 @@ export default async function ProductsPage({
   ])
 
   const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE))
+  const isPastEnd = count > 0 && page > totalPages
   const firstOnPage = (page - 1) * PAGE_SIZE + 1
   const lastOnPage = (page - 1) * PAGE_SIZE + products.length
+  const filters = { q: params.q, collection: params.collection, tag: params.tag }
 
   return (
     <main className="mx-auto max-w-7xl p-6">
@@ -49,7 +52,19 @@ export default async function ProductsPage({
 
       {products.length === 0 ? (
         <p className="py-16 text-center text-gray-600">
-          No products match your search.
+          {isPastEnd ? (
+            <>
+              This page doesn’t exist.{" "}
+              <Link
+                href={productsPageHref(totalPages, filters)}
+                className="font-medium text-gray-900 underline underline-offset-4 hover:text-black"
+              >
+                Go to page {totalPages}
+              </Link>
+            </>
+          ) : (
+            "No products match your search."
+          )}
         </p>
       ) : (
         <>

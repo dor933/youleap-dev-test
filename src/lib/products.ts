@@ -1,19 +1,11 @@
 import { headers } from "next/headers"
+import type { Facets } from "./facets"
+import { catalogueSearchParams, type CatalogueQuery } from "./pagination"
 import type { ProductsResponse } from "@/types/product"
 
-export const PAGE_SIZE = 12
-
-export type ProductQuery = {
-  q?: string
-  collection?: string
-  tag?: string
-  page: number
-}
-
-export type Facets = {
-  collections: { handle: string; title: string }[]
-  tags: string[]
-}
+export type { Facets } from "./facets"
+export { PAGE_SIZE } from "./pagination"
+export type { CatalogueQuery as ProductQuery } from "./pagination"
 
 /**
  * The storefront talks to the catalogue over HTTP even when both happen to be
@@ -30,15 +22,8 @@ async function getOrigin(): Promise<string> {
   return `${protocol}://${host}`
 }
 
-export async function fetchProducts(query: ProductQuery): Promise<ProductsResponse> {
-  const params = new URLSearchParams({
-    limit: String(PAGE_SIZE),
-    offset: String((query.page - 1) * PAGE_SIZE),
-  })
-
-  if (query.q) params.set("q", query.q)
-  if (query.collection) params.set("collection", query.collection)
-  if (query.tag) params.set("tag", query.tag)
+export async function fetchProducts(query: CatalogueQuery): Promise<ProductsResponse> {
+  const params = catalogueSearchParams(query)
 
   const response = await fetch(`${await getOrigin()}/api/products?${params}`, {
     cache: "no-store",

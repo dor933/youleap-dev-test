@@ -55,7 +55,15 @@ needs setup before it runs, which conflicts with the submission checklist. Readi
 The alternative was hardcoding the values. I did not, because the `tag` enum in `openapi.json` is
 missing six tags the products actually carry (see Surprises) — hardcoding it would silently remove
 six working filters from the UI. Deriving facets from the catalogue keeps the filters correct even
-when the spec drifts. Adding API routes is explicitly permitted by the brief.
+when the spec drifts. The derivation lives in `collectFacets` so a test can compare it against both
+the fixture and the spec; the route handler only returns that result. Adding API routes is
+explicitly permitted by the brief.
+
+**The UI page number is translated to `offset` in `catalogueSearchParams`, never sent as `page`.**
+`GET /api/products` paginates with `offset` (a skip count) and ignores an unsupported `page`
+parameter. Page 3 of a 12-item page size is `offset=24`. `parsePage` also rejects `0`, negatives, and
+`abc` so they cannot become `NaN` and produce a nonsense slice. Those helpers exist so the conversion
+is unit-tested rather than only checked by clicking pagination links.
 
 **Quick View reuses the product from the list response instead of calling `GET /api/products/:id`.**
 Both endpoints serve the same fixture, so the list payload already contains images, description,
@@ -186,10 +194,12 @@ This prevents a cart that cannot be fulfilled, and avoids zero-quantity ghost li
 
 **The cart persists to `localStorage`, restored after mount rather than during render.**
 Reading storage during render is the standard way to cause a hydration mismatch in Next, so state
-starts empty — matching the server — and is hydrated in an effect. Persisted data is structurally
-validated on read and unrecognised lines are dropped, so a stale or hand-edited cart degrades instead
-of crashing the drawer. Persistence is not required by the brief; I included it because a cart that
-empties on refresh is a poor storefront experience, and it is about fifteen lines.
+starts empty — matching the server — and is hydrated in an effect. Checkout waits for that hydration
+before it may say the cart is empty, so a refresh with a saved cart does not flash the empty state.
+Persisted data is structurally validated on read and unrecognised lines are dropped, so a stale or
+hand-edited cart degrades instead of crashing the drawer. Persistence is not required by the brief;
+I included it because a cart that empties on refresh is a poor storefront experience, and it is about
+fifteen lines.
 
 ### Checkout
 
@@ -296,8 +306,9 @@ and product decisions stay in `DECISIONS.md`, not in the agent files.
   lines that are no longer purchasable.
 - **`getCartTotal` assumes one currency.** It takes the currency from the first line, which is safe
   for this single-currency catalogue but would need grouping by currency otherwise.
-- **No component or end-to-end tests.** The modal's focus behaviour, the live regions, and the full
-  add-to-checkout flow were verified by hand. Playwright would be my first addition.
+- **No committed component or end-to-end suite.** The modal, cart, and checkout flows were walked
+  in the browser before submission. Putting Playwright into `pnpm test` would be the first addition
+  with more time.
 - **No real screen-reader pass.** The semantics are correct by construction — native `<dialog>`, real
   radio groups, live regions, labelled controls — but I did not test with NVDA or VoiceOver.
 - **No RTL or i18n support**, despite the catalogue being priced in shekels. The locale is a single
@@ -330,7 +341,7 @@ and product decisions stay in `DECISIONS.md`, not in the agent files.
 
 | Command | Result |
 | --- | --- |
-| `pnpm test` | 50 tests across 4 files |
+| `pnpm test` | 70 tests across 6 files |
 | `pnpm typecheck` | clean |
 | `pnpm lint` | clean |
 | `pnpm build` | succeeds |
@@ -343,28 +354,59 @@ the fixture — all 59 across 26 products — deriving a selection from each var
 resolving it back, and asserting it lands on exactly that variant. Any regression in title parsing
 fails it catalogue-wide rather than for one hand-picked case.
 
-The specific traps are pinned individually: `prod_20` King/Slate must report unavailable; `prod_14`
-`EU 43` must still resolve to `RS-43-BLK` despite its stray token; a partial selection must not
-resolve; and no product may default to an unavailable or out-of-stock variant.
+The same idea covers the traps that examples would miss if the fixture grew:
 
-**Exhaustive sweeps over the real data.** During development I ran throwaway route handlers to check
-properties across the whole catalogue, then deleted them once the findings were encoded as tests.
-They established that the full cartesian product of every product's options yields exactly **one**
-unavailable combination in the entire catalogue (`prod_20` King/Slate), that `getStartingPrice` equals
-the true minimum for all 26 products, and that the cart reducer behaves correctly across ten
-scenarios including inventory clamping and out-of-stock rejection.
+- A missing combination is a valid result, not a test failure. `prod_20` King/Slate is pinned
+  explicitly as `unavailable`. I did not sweep every option cartesian and assert "exactly one
+  hole in the fixture": that would fail the suite if another real gap appeared, even though the
+  resolver was doing the right thing. The round-trip test already covers every variant that *does*
+  exist; the King/Slate case covers the one that does not.
+- Out-of-stock is not missing. `prod_01` Navy Blue, `prod_03` 750ml Black, and `prod_08` Vanilla 2kg
+  must resolve, keep their own prices (₪319 / ₪229 / ₪329), and report `inventory_quantity: 0`.
+  Treating them as unavailable would hide the price the Quick View is required to show.
+- `prod_14` must resolve from Size alone. Joining the selection into a title and comparing it to
+  `"EU 42 - Black"` is the implementation that looks obvious and is wrong; a test asserts the real
+  title still contains the stray `Black` token.
+- `getStartingPrice` equals the true minimum on all 26 products. That sweep would still pass if we
+  used `variants[0]`, because the first variant happens to be cheapest today — so a second test
+  mutates a product so the cheaper variant is not first. Both are required.
+- `catalogueSearchParams` sends `offset=24` for page 3 and never sends `page`. The README example
+  and OpenAPI both omit `page`; a client that forwarded the UI query string would silently always
+  show the first twelve products.
+- `parsePage("abc")` and `parsePage("0")` fall back to 1, so a garbage URL cannot produce a `NaN`
+  offset.
+- `collectFacets` includes every tag the products carry, including the six the OpenAPI enum dropped
+  (`decor`, `equipment`, `footwear`, `leather`, `photography`, `wellness`). Building the dropdown
+  from the spec would make `?tag=footwear` unreachable from the UI.
+- Collection options expose `handle` (`audio`), not the display title (`Audio`). The API match is
+  exact and case-sensitive.
+- Money formatting uses minor units (`29900` → `₪299.00`, not `₪29,900.00`) and `en-IL` so the
+  string contains no RTL marks. `he-IL` would look correct in a log and break the LTR layout.
+
+The specific traps are also pinned individually: `prod_20` King/Slate must report unavailable;
+`prod_14` `EU 43` must still resolve to `RS-43-BLK`; a partial selection must not resolve; and no
+product may default to an unavailable or out-of-stock variant.
+
+**Exhaustive sweeps over the real data** used to include a cartesian count of missing combinations.
+That sweep is gone: an incomplete option matrix is legitimate commerce data, so "unavailable"
+must not fail the suite. What remains in Vitest is the round-trip of every existing variant, the
+starting-price minimum across all 26 products, and the cart reducer cases for inventory clamping
+and out-of-stock rejection.
 
 **Rendered-HTML assertions.** Because the list is server-rendered, I asserted directly against the
 markup: page 1 shows `Showing 1–12 of 26` with links to pages 2 and 3 and no Linen Bedding Set; page 3
 shows `Showing 25–26 of 26` and contains the 26th product; `q=linen` narrows to one result;
 `collection=office` includes the docking station and excludes the yoga mat; combined filters survive
-in the pagination hrefs; `?page=99` renders the empty state while keeping page links reachable; and
-`?page=abc` falls back to page 1 instead of producing a `NaN` offset.
+in the pagination hrefs; `?page=99` says the page does not exist and Previous returns to the last
+real page rather than to page 98; and `?page=abc` falls back to page 1 instead of producing a `NaN`
+offset.
 
 I also confirmed the `next/image` optimizer returns real optimized bytes, since `pnpm install` skips
 `sharp`'s build script by default.
 
-**Manual browser checks.** The paths that automation does not cover:
+**Browser checks.** These paths are not in `pnpm test` — Vitest covers `src/lib` only. They were
+walked in the browser before submission, because that is where a wrong join, a broken focus trap,
+or a cart that dies on refresh actually shows up:
 
 - `prod_20` — opens on Queen/Oatmeal at ₪599.00 "In stock"; King switches to ₪699.00 with "Only 4
   left"; adding Slate produces the unavailable message and no price; returning to Queen recovers.

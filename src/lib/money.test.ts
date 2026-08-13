@@ -18,6 +18,17 @@ describe("formatAmount", () => {
     // en-IL disambiguates foreign currencies, hence "US$" rather than "$".
     expect(formatAmount(9900, "USD")).toBe("US$99.00")
   })
+
+  it("does not emit RTL marks that would break an LTR layout", () => {
+    const formatted = formatAmount(29900, "ILS")
+
+    expect(formatted).toBe("₪299.00")
+    expect(formatted).not.toMatch(/[\u200E\u200F\u202A-\u202E\u2066-\u2069]/)
+  })
+
+  it("does not treat agorot as already-major units", () => {
+    expect(formatAmount(29900, "ILS")).not.toBe("₪29,900.00")
+  })
 })
 
 describe("formatPrice", () => {

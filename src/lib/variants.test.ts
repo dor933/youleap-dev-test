@@ -39,7 +39,7 @@ describe("resolveVariant", () => {
     }
   })
 
-  it("reports the one combination the catalogue does not stock", () => {
+  it("treats a combination with no matching variant as unavailable, not as an error", () => {
     const bedding = fixture("prod_20")
 
     expect(resolveVariant(bedding, { opt_size_20: "King", opt_color_20: "Slate" })).toEqual({
@@ -78,6 +78,50 @@ describe("resolveVariant", () => {
     expect(resolveVariant(headphones, { opt_color_01: "  navy blue " })).toMatchObject({
       status: "resolved",
     })
+  })
+
+  it("does not require the variant title to equal the joined selection", () => {
+    const shoes = fixture("prod_14")
+
+    expect(resolveVariant(shoes, { opt_size_14: "EU 42" }).status).toBe("resolved")
+    expect(variantAt(shoes, 0).title).toBe("EU 42 - Black")
+  })
+
+  it("resolves out-of-stock variants instead of calling them missing", () => {
+    const cases = [
+      {
+        id: "prod_01",
+        selection: { opt_color_01: "Navy Blue" },
+        sku: "HP-NVY-01",
+        amount: 31900,
+      },
+      {
+        id: "prod_03",
+        selection: { opt_size_03: "750ml", opt_color_03: "Black" },
+        sku: "WB-750-BLK",
+        amount: 22900,
+      },
+      {
+        id: "prod_08",
+        selection: { opt_flavor_08: "Vanilla", opt_size_08: "2kg" },
+        sku: "PP-VAN-2K",
+        amount: 32900,
+      },
+    ] as const
+
+    for (const { id, selection, sku, amount } of cases) {
+      const resolution = resolveVariant(fixture(id), selection)
+
+      expect(resolution.status, id).toBe("resolved")
+      if (resolution.status === "resolved") {
+        expect(resolution.variant.sku).toBe(sku)
+        expect(resolution.variant.inventory_quantity).toBe(0)
+        expect(getVariantPrice(resolution.variant)?.amount).toBe(amount)
+        expect(getStockStatus(resolution.variant.inventory_quantity).status).toBe(
+          "out_of_stock"
+        )
+      }
+    }
   })
 })
 
@@ -125,6 +169,16 @@ describe("pricing", () => {
     const range = getPriceRange(fixture("prod_11"))
 
     expect(range?.min.amount).toBe(range?.max.amount)
+  })
+
+  it("equals the cheapest variant on every product in the fixture", () => {
+    for (const product of products) {
+      const amounts = product.variants.map(
+        (variant) => getVariantPrice(variant)?.amount ?? Number.POSITIVE_INFINITY
+      )
+
+      expect(getStartingPrice(product)?.amount, product.id).toBe(Math.min(...amounts))
+    }
   })
 
   it("matches on currency instead of taking the first price", () => {
